@@ -24,6 +24,23 @@ web + Capacitor Android / Android TV).
 Чего в нём **нет** и что мы добавляем: сохранения в облаке — загрузка текущего сейва,
 запись, удаление, список слотов, штатный экран выбора сохранения.
 
+## Репозиторий и ветки
+
+| | |
+|---|---|
+| `origin` | `git@github-gameconnect:lkalyadin/game-connect.git` (приватный) |
+| `upstream` | `https://github.com/Visnalize/capacitor-game-connect.git` (только чтение) |
+| `main` | вендоренный upstream `8.0.0` + наши `AGENTS.md`/`docs/`, **кода сейвов тут нет** |
+| `feat/cloud-save` | облачные сохранения (активная рабочая ветка) |
+
+`github-gameconnect` — алиас из `~/.ssh/config` (ключ `~/.ssh/id_ed25519_gameconnect`,
+на GitHub это deploy key с write-доступом только к этому репозиторию). Ключ от
+`adventuremazes` переиспользовать нельзя: GitHub не разрешает один deploy key
+на разные репозитории.
+
+Обычный цикл: работаем в `feat/cloud-save` → `git push` → PR/мерж в `main` на GitHub.
+`main` при этом остаётся базой форка, чтобы правки можно было сопоставлять с upstream.
+
 ## Структура upstream (куда лезть)
 
 ```
