@@ -30,11 +30,13 @@ web + Capacitor Android / Android TV).
 src/definitions.ts        # единственное место, где объявлен TS-API (по нему docgen делает README)
 src/index.ts              # registerPlugin('CapacitorGameConnect')
 src/web.ts                # web-заглушки — обязательны для каждого нового метода
+src/interfaces/           # типы (player-score, user, saved-game)
 android/src/main/java/com/openforge/capacitorgameconnect/
-    CapacitorGameConnectPlugin.java   # @PluginMethod обёртки, ActivityResultLauncher
-    CapacitorGameConnect.java         # вся логика Play Games v2
+    CapacitorGameConnectPlugin.java   # @PluginMethod обёртки, ActivityResultLauncher, @ActivityCallback
+    CapacitorGameConnect.java         # ачивки, лидерборды, вход
+    SavedGames.java                   # облачные сохранения (snapshots)
     SignInCallback.java / PlayerResultCallback.java
-ios/Plugin/CapacitorGameConnect.swift # GameKit
+ios/Plugin/CapacitorGameConnect.swift # GameKit (сохранений пока нет)
 ```
 
 ## Документация по теме (локально, часть анализа)
@@ -51,12 +53,23 @@ ios/Plugin/CapacitorGameConnect.swift # GameKit
 
 VPS со студенческим стендом (см. `../students/AGENTS.md`), **не** дев-машина:
 
-- нет `node`/`npm`, нет `java`/`gradle`, нет Android SDK; `sudo` у `deployagent` нет;
-- поэтому здесь можно править код, TS-типы и документацию, но **собрать плагин
-  (`npm run build`, `gradlew`) и проверить на устройстве нельзя** — это делается
-  на машине с Android Studio / на телефоне или ТВ-приставке.
-- при желании node ставится без sudo в `~` (официальный тарбол с nodejs.org),
-  но JDK + Android SDK тянуть на этот VPS смысла нет.
+- `java`/`gradle`/Android SDK нет, `sudo` у `deployagent` нет → **Android-часть здесь
+  не собирается и не проверяется на устройстве**.
+- node/npm поставил агент без sudo: `/home/deployagent/.local/node22/bin` (Node 22).
+  Пользоваться так:
+
+```bash
+cd /home/deployagent/projects/gameconnect
+export PATH=/home/deployagent/.local/node22/bin:$PATH
+npm install          # один раз (package-lock в upstream был устаревший — обновлён)
+npm run build        # clean + docgen (README) + tsc + rollup
+npx tsc --noEmit     # быстрая проверка типов
+npx prettier --check "src/**/*.ts"
+```
+
+- Java проверяется только глазами и `javac` из `/tmp/opencode/jdk` (без Android SDK
+  компиляция невозможна); реальные сигнатуры GMS сверены через `javap` по
+  `play-services-games-v2-22.1.0`.
 
 Исходники upstream уже лежат **в корне этого репозитория** (версия `8.0.0`,
 upstream-коммит `fbcc813`), наши добавления — `AGENTS.md` и `docs/`. Обновление
@@ -69,7 +82,21 @@ git log --oneline HEAD..upstream/main  # что нового
 git merge upstream/main                # или cherry-pick нужного
 ```
 
-Node/JDK на этом VPS нет, поэтому `npm ci` / `npm run build` здесь не запускаются.
+## Текущее состояние
+
+Ветка `feat/cloud-save`: добавлены облачные сохранения (Google Play Games Saved Games).
+
+| Что | Где |
+|---|---|
+| Типы | `src/interfaces/saved-game.interface.ts` |
+| API (6 методов) | `src/definitions.ts` → README генерируется docgen'ом |
+| Web-fallback (localStorage) | `src/web.ts` |
+| Android-логика | `android/.../SavedGames.java` |
+| Обёртки + экран выбора сейва | `android/.../CapacitorGameConnectPlugin.java` |
+| Разбор и решения | `docs/cloud-save-research.md` § 5 |
+
+Ещё не сделано: iOS (методы объявлены, в Swift их нет), сборка под Android,
+включение Saved Games в Play Console, проверка на телефоне/ТВ, интеграция в игру.
 
 ## Правила
 
@@ -85,3 +112,6 @@ Node/JDK на этом VPS нет, поэтому `npm ci` / `npm run build` з�
 5. **README генерируется** из `definitions.ts` (`npm run docgen`) — руками не править.
 6. **Тест только на подписанной сборке** с тем же SHA-1, что в Play App Signing,
    и под тестовым аккаунтом из Play Console.
+7. **Открытый снапшот нельзя оставлять**: `loadSavedGame` после чтения делает
+   `discardAndClose`, `saveSavedGame`/`resolveSavedGameConflict` — `commitAndClose`.
+   Иначе следующий `open()` падает с «snapshot already open».

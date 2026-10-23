@@ -156,7 +156,14 @@ Before use the `Achievement Methods` of the plugin, you need to setup your Achie
 * [`unlockAchievement(...)`](#unlockachievement)
 * [`incrementAchievementProgress(...)`](#incrementachievementprogress)
 * [`getUserTotalScore(...)`](#getusertotalscore)
+* [`loadSavedGame(...)`](#loadsavedgame)
+* [`saveSavedGame(...)`](#savesavedgame)
+* [`listSavedGames()`](#listsavedgames)
+* [`deleteSavedGame(...)`](#deletesavedgame)
+* [`resolveSavedGameConflict(...)`](#resolvesavedgameconflict)
+* [`showSavedGames(...)`](#showsavedgames)
 * [Interfaces](#interfaces)
+* [Type Aliases](#type-aliases)
 
 </docgen-index>
 
@@ -275,6 +282,126 @@ getUserTotalScore(options: { leaderboardID: string; }) => Promise<PlayerScore>
 --------------------
 
 
+### loadSavedGame(...)
+
+```typescript
+loadSavedGame(options: { name?: string; snapshotId?: string; create?: boolean; conflictPolicy?: SavedGameConflictPolicy; }) => Promise<SavedGame>
+```
+
+* Method to load a saved game from Google Play Games (Saved Games)
+
+Either `name` or `snapshotId` must be provided. When `snapshotId` is used
+(for example the value returned by `showSavedGames`), the save is looked up
+through the saved games list first.
+
+With the default conflict policy the most recently modified version wins
+and the conflict is resolved silently. With `conflictPolicy: 'manual'` the
+call resolves with `conflict: true` plus both versions and nothing is
+written until `resolveSavedGameConflict` is called.
+
+| Param         | Type                                                                                                                                                    |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`options`** | <code>{ name?: string; snapshotId?: string; create?: boolean; conflictPolicy?: <a href="#savedgameconflictpolicy">SavedGameConflictPolicy</a>; }</code> |
+
+**Returns:** <code>Promise&lt;<a href="#savedgame">SavedGame</a>&gt;</code>
+
+--------------------
+
+
+### saveSavedGame(...)
+
+```typescript
+saveSavedGame(options: { name: string; data: string; description?: string; playedTimeMillis?: number; conflictPolicy?: SavedGameConflictPolicy; }) => Promise<SavedGameMetadata>
+```
+
+* Method to write a saved game to Google Play Games (Saved Games)
+
+The payload is sent as UTF-8 bytes and cannot exceed 3 MB.
+
+| Param         | Type                                                                                                                                                                           |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **`options`** | <code>{ name: string; data: string; description?: string; playedTimeMillis?: number; conflictPolicy?: <a href="#savedgameconflictpolicy">SavedGameConflictPolicy</a>; }</code> |
+
+**Returns:** <code>Promise&lt;<a href="#savedgamemetadata">SavedGameMetadata</a>&gt;</code>
+
+--------------------
+
+
+### listSavedGames()
+
+```typescript
+listSavedGames() => Promise<{ games: SavedGameMetadata[]; }>
+```
+
+* Method to list the saved games of the current player
+
+Each entry contains the save name, its identifier, description, played time
+and the last modification timestamp.
+
+**Returns:** <code>Promise&lt;{ games: SavedGameMetadata[]; }&gt;</code>
+
+--------------------
+
+
+### deleteSavedGame(...)
+
+```typescript
+deleteSavedGame(options: { name?: string; snapshotId?: string; }) => Promise<void>
+```
+
+* Method to delete a saved game
+
+Either `name` or `snapshotId` must be provided.
+
+| Param         | Type                                                 |
+| ------------- | ---------------------------------------------------- |
+| **`options`** | <code>{ name?: string; snapshotId?: string; }</code> |
+
+--------------------
+
+
+### resolveSavedGameConflict(...)
+
+```typescript
+resolveSavedGameConflict(options: { name: string; conflictId: string; resolution: 'server' | 'local'; data?: string; }) => Promise<SavedGame>
+```
+
+* Method to resolve a saved game conflict
+
+Call it after `loadSavedGame` resolved with `conflict: true`. The chosen
+version is committed; pass `data` to store a merged payload instead of the
+chosen version as is.
+
+| Param         | Type                                                                                               |
+| ------------- | -------------------------------------------------------------------------------------------------- |
+| **`options`** | <code>{ name: string; conflictId: string; resolution: 'server' \| 'local'; data?: string; }</code> |
+
+**Returns:** <code>Promise&lt;<a href="#savedgame">SavedGame</a>&gt;</code>
+
+--------------------
+
+
+### showSavedGames(...)
+
+```typescript
+showSavedGames(options?: { title?: string | undefined; allowAddButton?: boolean | undefined; allowDelete?: boolean | undefined; maxCount?: number | undefined; } | undefined) => Promise<SavedGameSelection>
+```
+
+* Method to display the Google Play Games "saved games" screen
+
+Resolves with `{ isNew: true }` when the player pressed "new save", or with
+the metadata (including `name` and `snapshotId`) of the picked save. Use
+`name` (or `snapshotId`) with `loadSavedGame` to read its contents.
+
+| Param         | Type                                                                                                 |
+| ------------- | ---------------------------------------------------------------------------------------------------- |
+| **`options`** | <code>{ title?: string; allowAddButton?: boolean; allowDelete?: boolean; maxCount?: number; }</code> |
+
+**Returns:** <code>Promise&lt;<a href="#savedgameselection">SavedGameSelection</a>&gt;</code>
+
+--------------------
+
+
 ### Interfaces
 
 
@@ -283,6 +410,69 @@ getUserTotalScore(options: { leaderboardID: string; }) => Promise<PlayerScore>
 | Prop               | Type                |
 | ------------------ | ------------------- |
 | **`player_score`** | <code>number</code> |
+
+
+#### SavedGame
+
+A saved game loaded from Google Play Games.
+
+| Prop             | Type                                                          | Description                                                             |
+| ---------------- | ------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| **`name`**       | <code>string</code>                                           | Name the save was opened with (from the metadata, or the requested one) |
+| **`data`**       | <code>string</code>                                           | Save payload, UTF-8 encoded (usually a JSON string)                     |
+| **`conflict`**   | <code>boolean</code>                                          | `true` when Google Play Games reported a conflict                       |
+| **`conflictId`** | <code>string</code>                                           | Identifier required by `resolveSavedGameConflict`                       |
+| **`server`**     | <code><a href="#savedgameversion">SavedGameVersion</a></code> | Server version, present only when `conflict` is `true`                  |
+| **`local`**      | <code><a href="#savedgameversion">SavedGameVersion</a></code> | Local version, present only when `conflict` is `true`                   |
+
+
+#### SavedGameVersion
+
+One of the two conflicting versions of a saved game.
+
+| Prop       | Type                |
+| ---------- | ------------------- |
+| **`data`** | <code>string</code> |
+
+
+#### SavedGameMetadata
+
+Structured metadata of a saved game.
+
+| Prop                     | Type                | Description                                                                                                                          |
+| ------------------------ | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| **`name`**               | <code>string</code> | Developer supplied save name (the `name` used to open the save). Google Play Games returns it as `SnapshotMetadata.getUniqueName()`. |
+| **`snapshotId`**         | <code>string</code> | Google Play Games identifier of the save, stable across devices                                                                      |
+| **`description`**        | <code>string</code> | Short description shown to the player by the Play Games saved games UI                                                               |
+| **`playedTimeMillis`**   | <code>number</code> | Played time in milliseconds, shown by the Play Games saved games UI                                                                  |
+| **`lastModifiedMillis`** | <code>number</code> | Last modification timestamp in milliseconds                                                                                          |
+| **`coverImageUri`**      | <code>string</code> | URI of the cover image, when the save has one                                                                                        |
+
+
+#### SavedGameSelection
+
+Result of the Play Games "select saved game" screen.
+
+| Prop        | Type                 | Description                                                                                                                          |
+| ----------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| **`isNew`** | <code>boolean</code> | `true` when the player pressed "new save" instead of picking an existing one; the game is then expected to create a save of its own. |
+
+
+### Type Aliases
+
+
+#### SavedGameConflictPolicy
+
+Policy used by Google Play Games to resolve a conflict between the local and
+the server version of the same saved game.
+
+- `mostRecentlyModified` (default) — the newest version wins
+- `longestPlaytime` — the version with the biggest played time wins
+- `lastKnownGood` — the last version that was known to be correct wins
+- `manual` — nothing is resolved automatically, both versions are returned
+  to the caller and must be resolved with `resolveSavedGameConflict`
+
+<code>'mostRecentlyModified' | 'longestPlaytime' | 'lastKnownGood' | 'manual'</code>
 
 </docgen-api>
 
