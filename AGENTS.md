@@ -24,17 +24,36 @@ web + Capacitor Android / Android TV).
 Чего в нём **нет** и что мы добавляем: сохранения в облаке — загрузка текущего сейва,
 запись, удаление, список слотов, штатный экран выбора сохранения.
 
+## Репозиторий и ветки
+
+| | |
+|---|---|
+| `origin` | `git@github-gameconnect:lkalyadin/game-connect.git` (приватный) |
+| `upstream` | `https://github.com/Visnalize/capacitor-game-connect.git` (только чтение) |
+| `main` | вендоренный upstream `8.0.0` + наши `AGENTS.md`/`docs/`, **кода сейвов тут нет** |
+| `feat/cloud-save` | облачные сохранения (активная рабочая ветка) |
+
+`github-gameconnect` — алиас из `~/.ssh/config` (ключ `~/.ssh/id_ed25519_gameconnect`,
+на GitHub это deploy key с write-доступом только к этому репозиторию). Ключ от
+`adventuremazes` переиспользовать нельзя: GitHub не разрешает один deploy key
+на разные репозитории.
+
+Обычный цикл: работаем в `feat/cloud-save` → `git push` → PR/мерж в `main` на GitHub.
+`main` при этом остаётся базой форка, чтобы правки можно было сопоставлять с upstream.
+
 ## Структура upstream (куда лезть)
 
 ```
 src/definitions.ts        # единственное место, где объявлен TS-API (по нему docgen делает README)
 src/index.ts              # registerPlugin('CapacitorGameConnect')
 src/web.ts                # web-заглушки — обязательны для каждого нового метода
+src/interfaces/           # типы (player-score, user, saved-game)
 android/src/main/java/com/openforge/capacitorgameconnect/
-    CapacitorGameConnectPlugin.java   # @PluginMethod обёртки, ActivityResultLauncher
-    CapacitorGameConnect.java         # вся логика Play Games v2
+    CapacitorGameConnectPlugin.java   # @PluginMethod обёртки, ActivityResultLauncher, @ActivityCallback
+    CapacitorGameConnect.java         # ачивки, лидерборды, вход
+    SavedGames.java                   # облачные сохранения (snapshots)
     SignInCallback.java / PlayerResultCallback.java
-ios/Plugin/CapacitorGameConnect.swift # GameKit
+ios/Plugin/CapacitorGameConnect.swift # GameKit (сохранений пока нет)
 ```
 
 ## Документация по теме (локально, часть анализа)
@@ -51,25 +70,60 @@ ios/Plugin/CapacitorGameConnect.swift # GameKit
 
 VPS со студенческим стендом (см. `../students/AGENTS.md`), **не** дев-машина:
 
-- нет `node`/`npm`, нет `java`/`gradle`, нет Android SDK; `sudo` у `deployagent` нет;
-- поэтому здесь можно править код, TS-типы и документацию, но **собрать плагин
-  (`npm run build`, `gradlew`) и проверить на устройстве нельзя** — это делается
-  на машине с Android Studio / на телефоне или ТВ-приставке.
-- при желании node ставится без sudo в `~` (официальный тарбол с nodejs.org),
-  но JDK + Android SDK тянуть на этот VPS смысла нет.
-
-Исходники upstream уже лежат **в корне этого репозитория** (версия `8.0.0`,
-upstream-коммит `fbcc813`), наши добавления — `AGENTS.md` и `docs/`. Обновление
-с upstream:
+- `java`/`gradle`/Android SDK нет, `sudo` у `deployagent` нет → **Android-часть здесь
+  не собирается и не проверяется на устройстве**.
+- node/npm поставил агент без sudo: `/home/deployagent/.local/node22/bin` (Node 22).
+  Пользоваться так:
 
 ```bash
 cd /home/deployagent/projects/gameconnect
-git fetch upstream                     # remote добавлен при вендоринге
-git log --oneline HEAD..upstream/main  # что нового
-git merge upstream/main                # или cherry-pick нужного
+export PATH=/home/deployagent/.local/node22/bin:$PATH
+npm install          # один раз (package-lock в upstream был устаревший — обновлён)
+npm run build        # clean + docgen (README) + tsc + rollup
+npx tsc --noEmit     # быстрая проверка типов
+npx prettier --check "src/**/*.ts"
 ```
 
-Node/JDK на этом VPS нет, поэтому `npm ci` / `npm run build` здесь не запускаются.
+- Java проверяется только глазами и `javac` из `/tmp/opencode/jdk` (без Android SDK
+  компиляция невозможна); реальные сигнатуры GMS сверены через `javap` по
+  `play-services-games-v2-22.1.0`.
+
+Исходники upstream уже лежат **в корне этого репозитория** (версия `8.0.0`,
+upstream-коммит `fbcc813`), наши добавления — `AGENTS.md` и `docs/`.
+
+**Важно:** вендоринг сделан снимком файлов, **общей истории с upstream нет**
+(`git merge-base HEAD upstream/main` пуст). Поэтому `git merge upstream/main`
+не сработает («refusing to merge unrelated histories»), а `git diff` сравнивает
+только содержимое файлов. Обновление с upstream:
+
+```bash
+cd /home/deployagent/projects/gameconnect
+git fetch upstream
+git log --oneline HEAD..upstream/main       # что нового в upstream
+git diff HEAD upstream/main --stat          # какие файлы разошлись
+# переносить точечно, чтобы не потерять наши правки:
+git checkout upstream/main -- src/web.ts    # пример: взять файл из upstream
+```
+
+Если понадобится полноценная история upstream, лучше один раз пересоздать
+репозиторий от `upstream/main` и перенести поверх наши коммиты, чем тянуть
+`--allow-unrelated-histories`.
+
+## Текущее состояние
+
+Ветка `feat/cloud-save`: добавлены облачные сохранения (Google Play Games Saved Games).
+
+| Что | Где |
+|---|---|
+| Типы | `src/interfaces/saved-game.interface.ts` |
+| API (6 методов) | `src/definitions.ts` → README генерируется docgen'ом |
+| Web-fallback (localStorage) | `src/web.ts` |
+| Android-логика | `android/.../SavedGames.java` |
+| Обёртки + экран выбора сейва | `android/.../CapacitorGameConnectPlugin.java` |
+| Разбор и решения | `docs/cloud-save-research.md` § 5 |
+
+Ещё не сделано: iOS (методы объявлены, в Swift их нет), сборка под Android,
+включение Saved Games в Play Console, проверка на телефоне/ТВ, интеграция в игру.
 
 ## Правила
 
@@ -85,3 +139,6 @@ Node/JDK на этом VPS нет, поэтому `npm ci` / `npm run build` з�
 5. **README генерируется** из `definitions.ts` (`npm run docgen`) — руками не править.
 6. **Тест только на подписанной сборке** с тем же SHA-1, что в Play App Signing,
    и под тестовым аккаунтом из Play Console.
+7. **Открытый снапшот нельзя оставлять**: `loadSavedGame` после чтения делает
+   `discardAndClose`, `saveSavedGame`/`resolveSavedGameConflict` — `commitAndClose`.
+   Иначе следующий `open()` падает с «snapshot already open».

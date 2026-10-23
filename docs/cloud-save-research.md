@@ -101,103 +101,80 @@ ios/Plugin/CapacitorGameConnect.swift                GameKit
    `fetchSavedGames`, `resolveConflictsForSavedGames`), но это отдельная реализация —
    если TV/Android в приоритете, iOS можно сделать вторым этапом.
 
-## 5. Предлагаемый API плагина
+## 5. Что реализовано (ветка `feat/cloud-save`)
+
+API добавлен в `src/definitions.ts`, реальные типы — `src/interfaces/saved-game.interface.ts`:
 
 ```ts
-export type ConflictPolicy =
-  | 'mostRecentlyModified'   // RESOLUTION_POLICY_MOST_RECENTLY_MODIFIED
-  | 'longestPlaytime'
-  | 'lastKnownGood'
-  | 'manual';
+export type SavedGameConflictPolicy =
+  | 'mostRecentlyModified'   // RESOLUTION_POLICY_MOST_RECENTLY_MODIFIED (по умолчанию)
+  | 'longestPlaytime'        // RESOLUTION_POLICY_LONGEST_PLAYTIME
+  | 'lastKnownGood'          // RESOLUTION_POLICY_LAST_KNOWN_GOOD
+  | 'manual';                // RESOLUTION_POLICY_MANUAL — конфликт отдаётся в JS
 
-export interface SavedGameInfo {
-  name: string;
-  description?: string;
-  playedTimeMillis: number;
-  lastModifiedMillis: number;
-}
-
-export interface SavedGameData extends SavedGameInfo {
-  data: string;              // UTF-8 / JSON, плагин конвертирует в байты
-  conflict?: boolean;        // true — конфликт был разрешён автоматически/вручную
-}
-
-export interface CapacitorGameConnectPlugin {
-  // ... 8 существующих методов ...
-
-  /** Прочитать сейв; если его нет и create !== false — создать пустой */
-  loadGameData(options: {
-    name: string;
-    create?: boolean;
-    conflictPolicy?: ConflictPolicy;
-  }): Promise<SavedGameData>;
-
-  /** Записать сейв (open → writeBytes → commitAndClose) */
-  saveGameData(options: {
-    name: string;
-    data: string;
-    description?: string;
-    playedTimeMillis?: number;
-  }): Promise<SavedGameInfo>;
-
-  /** Список сохранений игрока */
-  getSavedGames(): Promise<{ games: SavedGameInfo[] }>;
-
-  /** Удалить сейв */
-  deleteGameData(options: { name: string }): Promise<void>;
-
-  /** Штатный экран Play Games «выбрать сохранение» */
-  showSavedGames(options?: {
-    title?: string;
-    allowAddButton?: boolean;
-    allowDelete?: boolean;
-    maxCount?: number;
-  }): Promise<{ name?: string; isNew?: boolean }>;
-}
+loadSavedGame({ name?, snapshotId?, create?, conflictPolicy? }): Promise<SavedGame>
+saveSavedGame({ name, data, description?, playedTimeMillis?, conflictPolicy? }): Promise<SavedGameMetadata>
+listSavedGames(): Promise<{ games: SavedGameMetadata[] }>
+deleteSavedGame({ name?, snapshotId? }): Promise<void>
+resolveSavedGameConflict({ name, conflictId, resolution: 'server' | 'local', data? }): Promise<SavedGame>
+showSavedGames({ title?, allowAddButton?, allowDelete?, maxCount? }): Promise<SavedGameSelection>
 ```
 
-Скелет Java (в `CapacitorGameConnect.java`):
+`SavedGame` = метаданные + `data` (UTF-8 строка) + `conflict`/`conflictId` +
+опциональные `server`/`local` с обоими вариантами сейва.
 
-```java
-public void loadGameData(PluginCall call) {
-  String name = call.getString("name");
-  boolean create = call.getBoolean("create", true);
-  int policy = SnapshotsClient.RESOLUTION_POLICY_MOST_RECENTLY_MODIFIED;
+### Файлы
 
-  PlayGames.getSnapshotsClient(activity)
-    .open(name, create, policy)
-    .addOnSuccessListener(result -> {
-      // result.isConflict() == true — серверная/локальная версии, нужен выбор
-      Snapshot snapshot = result.getData();
-      try {
-        byte[] bytes = snapshot.getSnapshotContents().readFully();
-        JSObject ret = new JSObject();
-        ret.put("data", new String(bytes, StandardCharsets.UTF_8));
-        ret.put("conflict", result.isConflict());
-        ret.put("name", name);
-        call.resolve(ret);
-      } catch (IOException e) {
-        call.reject("read snapshot failed: " + e.getMessage());
-      }
-    })
-    .addOnFailureListener(e -> call.reject(e.getMessage()));
-}
-```
+| Файл | Что |
+|---|---|
+| `src/interfaces/saved-game.interface.ts` | все типы сейвов |
+| `src/definitions.ts` | 6 новых методов + JSDoc (из него docgen собирает README) |
+| `src/web.ts` | web-fallback на `localStorage` (load/save/list/delete), UI недоступен |
+| `android/.../SavedGames.java` | вся логика Play Games Saved Games (~440 строк) |
+| `android/.../CapacitorGameConnectPlugin.java` | `@PluginMethod`-обёртки + `@ActivityCallback` для экрана выбора |
 
-Запись — `open(...)` → `snapshot.getSnapshotContents().writeBytes(data.getBytes(UTF_8))`
-→ `SnapshotMetadataChange.Builder().setDescription(desc).build()` →
-`commitAndClose(snapshot, change)`; резолв — по завершении `commitAndClose`.
+### Решения, принятые по ходу
 
-Два места, где нужна аккуратность:
+1. **Сейв закрывается сразу после чтения.** После `open()` снапшот остаётся открытым,
+   и следующий `open` того же сейва падает с «snapshot already open». Поэтому
+   `loadSavedGame` после `readFully()` делает `discardAndClose()` (данные на сервере
+   не меняются), а `saveSavedGame`/`resolveSavedGameConflict` — `commitAndClose()`.
+2. **`create: true` не создаёт пустой сейв на сервере.** `loadSavedGame` открывает
+   несуществующий сейв как пустой и возвращает `data: ''`, но `discardAndClose` его не
+   коммитит — реальная запись появляется только после `saveSavedGame`. Так «просто
+   прочитать» не плодит пустые сейвы.
+3. **Имя сейва доступно.** В документации его нет, но в интерфейсе есть
+   `SnapshotMetadata.getUniqueName()` (проверено по `play-services-games-v2-22.1.0`),
+   это и есть имя, с которым сейв открывали. Плагин отдаёт его в `name`, поэтому
+   `listSavedGames()` и `showSavedGames()` возвращают имена — можно сразу звать
+   `loadSavedGame({ name })`.
+4. **Конфликт не разрешается молча, если выбрана `manual`.** `loadSavedGame` вернёт
+   `conflict: true` + `server`/`local` + `conflictId`; `saveSavedGame` в этой ситуации
+   отклоняется с кодом ошибки `CONFLICT` и тем же payload'ом; дальше игра зовёт
+   `resolveSavedGameConflict`. `resolveSavedGameConflict` заново открывает сейв с
+   политикой `MANUAL` (держать открытый снапшот в памяти между вызовами не нужно) и
+   сверяет `conflictId`.
+5. **Авторизация проверяется в каждом методе** (`isAuthenticated()` до работы с
+   снапшотами); при отсутствии входа — reject с кодом `NOT_SIGNED_IN`.
+6. **Лимит 3 МБ проверяется до записи** (по длине UTF-8, до `writeBytes`).
+7. **Экран выбора сейва** — через `getSelectSnapshotIntent` + Capacitor
+   `startActivityForResult`/`@ActivityCallback`; результат отдаёт `isNew: true`
+   (нажали «новый») либо метаданные выбранного сейва.
 
-- **Конфликт при записи.** Если `open()` вернул `isConflict()`, нельзя просто писать
-  поверх: по документации нужно либо взять одну из версий и вызвать
-  `resolveConflict(conflictId, snapshot)`, либо честно отдать конфликт в JS
-  (`conflict: true` + оба варианта) и дать игре решить. Для автосейва практично:
-  политика `mostRecentlyModified` по умолчанию + возможность `manual` для UI «какой
-  сейв оставить».
-- **Размер.** 3 МБ — это про данные, но JSON-сейв игры лучше держать в килобайтах и
-  не пихать туда историю партий: снапшот перезаписывается целиком при каждом коммите.
+### Что осталось
+
+- **iOS не реализован**: на iOS методы есть в типах, но в `CapacitorGameConnect.swift`
+  их нет — вызов упадёт с «not implemented». Нужен отдельный этап на
+  `GKLocalPlayer.saveGameData` / `fetchSavedGames` / `resolveConflictsForSavedGames`
+  (в GameKit нет штатного экрана выбора сохранений, `showSavedGames` придётся рисовать
+  в игре).
+- **Не собрано под Android.** На этом VPS нет JDK/Android SDK; Java проверена только
+  на разбор синтаксиса и сверена с реальными классами `play-services-games-v2-22.1.0`
+  через `javap`. `npm run build` (tsc + rollup + docgen) проходит.
+- Проверка на устройстве: включить Saved Games в консоли, release-подпись, тестовый
+  аккаунт, телефон + ТВ.
+- В игре: автосейв при старте/паузе/выходе, загрузка при старте, экран конфликта,
+  версия схемы сейва внутри JSON.
 
 ## 6. Оценка сложности
 
@@ -218,7 +195,7 @@ public void loadGameData(PluginCall call) {
 1. **Android TV.** Игра — web + Capacitor Android / Android TV. Системные экраны Play
    Games (выбор сохранений, лидерборды) на ТВ-приставках могут не показываться или не
    управляться пультом — Play Games-приложения на ТВ обычно нет. Значит на TV надёжнее
-   путь без штатного UI: `loadGameData`/`saveGameData` по фиксированному имени слота.
+   путь без штатного UI: `loadSavedGame`/`saveSavedGame` по фиксированному имени слота.
    Это надо проверить на конкретной приставке до того, как закладывать UI в дизайн.
 2. **Подпись.** Тест «в debug-сборке» почти наверняка даст ошибку — нужен release-ключ,
    совпадающий с Play App Signing.
@@ -228,13 +205,16 @@ public void loadGameData(PluginCall call) {
    явный формат (JSON-строка), версия схемы внутри и правило «что делать, если схема
    сейва старее» — иначе после обновления игры старые облачные сейвы поломают старт.
 
-## 7. Порядок работ
+## 7. Статус работ
 
-1. Форк + клон в этот каталог (`git clone` upstream, remote `upstream`, своя ветка).
-2. `npm install && npm run build` на дев-машине (здесь нет node/JDK — только правки).
-3. Включить Saved Games в Play Console (и подождать/почистить данные).
-4. TS-типы + web-заглушки (контракт фиксируем до Java).
-5. Java: load → save → list → delete, затем штатный UI.
-6. Проверка: телефон (release-подпись, тестовый аккаунт) → ТВ-приставка.
-7. `npm run docgen` (README), версия `8.1.0`, changelog.
-8. В игре: автосейв при старте/паузе/выходе, загрузка при старте, экран конфликта.
+Сделано в ветке `feat/cloud-save`:
+
+1. ✅ Исходники upstream в корне репозитория, remote `upstream` настроен.
+2. ✅ `npm install` + `npm run build` (tsc, rollup, docgen → README) — зелёные.
+3. ✅ TS-контракт: 6 методов + типы + web-fallback на `localStorage`.
+4. ✅ Java: load / save / list / delete / resolveConflict / select UI.
+5. ⏳ Saved Games в Play Console — **не включено**, это делает владелец аккаунта
+   (галочка + ожидание активации до 24 ч).
+6. ⏳ Сборка плагина и проверка на устройстве — только на дев-машине.
+7. ⏳ iOS (GameKit saved games) — отдельный этап.
+8. ⏳ Интеграция в игру: автосейв, загрузка при старте, экран конфликта, версия схемы.
