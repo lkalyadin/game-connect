@@ -72,15 +72,25 @@ npx prettier --check "src/**/*.ts"
   `play-services-games-v2-22.1.0`.
 
 Исходники upstream уже лежат **в корне этого репозитория** (версия `8.0.0`,
-upstream-коммит `fbcc813`), наши добавления — `AGENTS.md` и `docs/`. Обновление
-с upstream:
+upstream-коммит `fbcc813`), наши добавления — `AGENTS.md` и `docs/`.
+
+**Важно:** вендоринг сделан снимком файлов, **общей истории с upstream нет**
+(`git merge-base HEAD upstream/main` пуст). Поэтому `git merge upstream/main`
+не сработает («refusing to merge unrelated histories»), а `git diff` сравнивает
+только содержимое файлов. Обновление с upstream:
 
 ```bash
 cd /home/deployagent/projects/gameconnect
-git fetch upstream                     # remote добавлен при вендоринге
-git log --oneline HEAD..upstream/main  # что нового
-git merge upstream/main                # или cherry-pick нужного
+git fetch upstream
+git log --oneline HEAD..upstream/main       # что нового в upstream
+git diff HEAD upstream/main --stat          # какие файлы разошлись
+# переносить точечно, чтобы не потерять наши правки:
+git checkout upstream/main -- src/web.ts    # пример: взять файл из upstream
 ```
+
+Если понадобится полноценная история upstream, лучше один раз пересоздать
+репозиторий от `upstream/main` и перенести поверх наши коммиты, чем тянуть
+`--allow-unrelated-histories`.
 
 ## Текущее состояние
 
