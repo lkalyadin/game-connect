@@ -18,7 +18,6 @@ import com.google.android.gms.games.snapshot.SnapshotMetadataChange;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.util.List;
 
 /**
  * Google Play Games Saved Games (snapshots) implementation.
@@ -160,8 +159,7 @@ public class SavedGames {
                     JSArray games = new JSArray();
                     SnapshotMetadataBuffer buffer = annotatedData.get();
                     if (buffer != null) {
-                        List<SnapshotMetadata> metadata = buffer.freeze();
-                        for (SnapshotMetadata item : metadata) {
+                        for (SnapshotMetadata item : buffer) {
                             games.put(metadataToJs(item));
                         }
                     }
@@ -372,7 +370,7 @@ public class SavedGames {
                     SnapshotMetadataBuffer buffer = annotatedData.get();
                     SnapshotMetadata found = null;
                     if (buffer != null) {
-                        for (SnapshotMetadata item : buffer.freeze()) {
+                        for (SnapshotMetadata item : buffer) {
                             if (snapshotId.equals(item.getSnapshotId())) {
                                 found = item;
                                 break;
