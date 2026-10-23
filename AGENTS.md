@@ -1,7 +1,8 @@
 # Проект: gameconnect
 
 Доработка Capacitor-плагина игровых сервисов для игры **Adventure Mazes**
-(репозиторий игры: `~/adventuremazes`, web + Capacitor Android / Android TV).
+(репозиторий игры: `../adventuremazes` = `/home/deployagent/projects/adventuremazes`,
+web + Capacitor Android / Android TV).
 Здесь живёт форк плагина и всё, что мы в него добавляем — прежде всего **облачные
 сохранения (Google Play Games Saved Games / Snapshots)**.
 
@@ -57,7 +58,18 @@ VPS со студенческим стендом (см. `../students/AGENTS.md`)
 - при желании node ставится без sudo в `~` (официальный тарбол с nodejs.org),
   но JDK + Android SDK тянуть на этот VPS смысла нет.
 
-Клон для анализа (временный, может исчезнуть): `/tmp/opencode/analysis/capacitor-game-connect`.
+Исходники upstream уже лежат **в корне этого репозитория** (версия `8.0.0`,
+upstream-коммит `fbcc813`), наши добавления — `AGENTS.md` и `docs/`. Обновление
+с upstream:
+
+```bash
+cd /home/deployagent/projects/gameconnect
+git fetch upstream                     # remote добавлен при вендоринге
+git log --oneline HEAD..upstream/main  # что нового
+git merge upstream/main                # или cherry-pick нужного
+```
+
+Node/JDK на этом VPS нет, поэтому `npm ci` / `npm run build` здесь не запускаются.
 
 ## Правила
 
