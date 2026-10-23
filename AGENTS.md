@@ -6,6 +6,29 @@ web + Capacitor Android / Android TV).
 Здесь живёт форк плагина и всё, что мы в него добавляем — прежде всего **облачные
 сохранения (Google Play Games Saved Games / Snapshots)**.
 
+## Где работает агент (VPS vs компьютер владельца)
+
+Агент выполняет команды **на VPS** (`94.141.97.249`, Ubuntu, пользователь `deployagent`),
+а не на компьютере владельца. Серверные пути и инструменты (`/home/deployagent/projects/...`,
+bash, `sg docker`, systemd-таймеры) — это нормальная среда агента, а не его машина.
+
+Компьютер владельца — **Windows 11**, на нём уже стоят **Node.js, JDK и Android SDK / Android Studio**.
+Отсюда правила для любых инструкций, которые мы пишем владельцу:
+
+- писать **под Windows**: PowerShell (или cmd), пути вида `C:\...` и `%USERPROFILE%`,
+  `npx.cmd`/`npx`, `copy`/`xcopy`/`robocopy`; без `sudo`, `chmod`, `export`, `$(...)`,
+  bash-цепочек `&&` и `VAR=value command`, если не дан эквивалент для Windows;
+- у каждого блока команд помечать, где он выполняется — «на VPS» или «на Windows»;
+  не смешивать серверные и локальные шаги в одном неподписанном блоке;
+- сборка плагина и приложения, `npm pack`, `gradlew`, Android Studio, `adb` и тесты
+  на устройстве — **на машине владельца**; на VPS нет JDK и Android SDK, здесь доступны
+  только проверки JS-уровня (`tsc`, `rollup`, node-скрипты) и сверка исходников;
+- файл, созданный агентом на VPS, сам к владельцу не попадёт: передача — через git
+  (`push` / `pull`) или `scp` из PowerShell. Не давать владельцу серверные пути вроде
+  `/tmp/opencode/...` как будто они есть у него локально;
+- `/home/deployagent/projects/gameconnect` (клон на VPS) и локальный клон владельца —
+  **разные копии**, синхронизация только через git.
+
 ## Что за плагин
 
 | | |
@@ -124,6 +147,14 @@ git checkout upstream/main -- src/web.ts    # пример: взять файл 
 
 Ещё не сделано: iOS (методы объявлены, в Swift их нет), сборка под Android,
 включение Saved Games в Play Console, проверка на телефоне/ТВ, интеграция в игру.
+
+**Сверка с upstream** (23.10.2026, `bash scripts/verify-upstream-identical.sh`):
+код ачивок/лидербордов совпадает с `upstream/main` (fbcc813) побайтово
+(`CapacitorGameConnect.java`, оба callback'а, `build.gradle`, `AndroidManifest.xml`,
+`src/index.ts`, интерфейсы), а в `CapacitorGameConnectPlugin.java`, `src/definitions.ts`
+и `src/web.ts` **нет ни одной удалённой или изменённой строки** — только добавления.
+Сборка JS из исходников upstream той же цепочкой даёт идентичный `dist/esm/index.js`
+и `web.js`/`plugin.cjs.js`, отличающиеся только добавленными методами.
 
 ## Правила
 
