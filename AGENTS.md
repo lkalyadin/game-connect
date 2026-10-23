@@ -125,6 +125,14 @@ git checkout upstream/main -- src/web.ts    # пример: взять файл 
 Ещё не сделано: iOS (методы объявлены, в Swift их нет), сборка под Android,
 включение Saved Games в Play Console, проверка на телефоне/ТВ, интеграция в игру.
 
+**Сверка с upstream** (23.10.2026, `bash scripts/verify-upstream-identical.sh`):
+код ачивок/лидербордов совпадает с `upstream/main` (fbcc813) побайтово
+(`CapacitorGameConnect.java`, оба callback'а, `build.gradle`, `AndroidManifest.xml`,
+`src/index.ts`, интерфейсы), а в `CapacitorGameConnectPlugin.java`, `src/definitions.ts`
+и `src/web.ts` **нет ни одной удалённой или изменённой строки** — только добавления.
+Сборка JS из исходников upstream той же цепочкой даёт идентичный `dist/esm/index.js`
+и `web.js`/`plugin.cjs.js`, отличающиеся только добавленными методами.
+
 ## Правила
 
 1. **Совместимость:** существующие 8 методов не ломать — только добавлять.
